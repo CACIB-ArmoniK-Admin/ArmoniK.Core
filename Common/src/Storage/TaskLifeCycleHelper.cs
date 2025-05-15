@@ -47,11 +47,11 @@ public static class TaskLifeCycleHelper
   ///   Merged task options
   /// </returns>
   /// <exception cref="InvalidOperationException">when partition in incoming tasks options is not allowed in the session</exception>
-  public static TaskOptions ValidateSession(SessionData       sessionData,
-                                            TaskOptions?      submissionOptions,
-                                            string            parentTaskId,
-                                            int               maxPriority,
-                                            ILogger           logger,
+  public static TaskOptions ValidateSession(SessionData sessionData,
+                                            TaskOptions? submissionOptions,
+                                            string parentTaskId,
+                                            int maxPriority,
+                                            ILogger logger,
                                             CancellationToken cancellationToken)
   {
     var localOptions = submissionOptions is not null
@@ -113,13 +113,13 @@ public static class TaskLifeCycleHelper
   /// <returns>
   ///   Task representing the asynchronous execution of the method
   /// </returns>
-  public static async Task CreateTasks(ITaskTable                       taskTable,
-                                       IResultTable                     resultTable,
-                                       string                           sessionId,
-                                       string                           parentTaskId,
+  public static async Task CreateTasks(ITaskTable taskTable,
+                                       IResultTable resultTable,
+                                       string sessionId,
+                                       string parentTaskId,
                                        ICollection<TaskCreationRequest> taskCreationRequests,
-                                       ILogger                          logger,
-                                       CancellationToken                cancellationToken = default)
+                                       ILogger logger,
+                                       CancellationToken cancellationToken = default)
   {
     if (!taskCreationRequests.Any())
     {
@@ -127,7 +127,7 @@ public static class TaskLifeCycleHelper
     }
 
     var parentTaskIds = new List<string>();
-    var createdBy     = string.Empty;
+    var createdBy = string.Empty;
 
     if (!parentTaskId.Equals(sessionId))
     {
@@ -213,14 +213,14 @@ public static class TaskLifeCycleHelper
   /// <returns>
   ///   Task representing the asynchronous execution of the method
   /// </returns>
-  public static async Task FinalizeTaskCreation(ITaskTable                       taskTable,
-                                                IResultTable                     resultTable,
-                                                IPushQueueStorage                pushQueueStorage,
+  public static async Task FinalizeTaskCreation(ITaskTable taskTable,
+                                                IResultTable resultTable,
+                                                IPushQueueStorage pushQueueStorage,
                                                 ICollection<TaskCreationRequest> taskRequests,
-                                                SessionData                      sessionData,
-                                                string                           parentTaskId,
-                                                ILogger                          logger,
-                                                CancellationToken                cancellationToken = default)
+                                                SessionData sessionData,
+                                                string parentTaskId,
+                                                ILogger logger,
+                                                CancellationToken cancellationToken = default)
   {
     if (!taskRequests.Any())
     {
@@ -283,16 +283,16 @@ public static class TaskLifeCycleHelper
   /// <returns>
   ///   Queue messages for ready tasks
   /// </returns>
-  private static async Task<ICollection<MessageData>> PrepareTaskDependencies(ITaskTable                       taskTable,
-                                                                              IResultTable                     resultTable,
+  private static async Task<ICollection<MessageData>> PrepareTaskDependencies(ITaskTable taskTable,
+                                                                              IResultTable resultTable,
                                                                               ICollection<TaskCreationRequest> taskRequests,
-                                                                              ILogger                          logger,
-                                                                              CancellationToken                cancellationToken)
+                                                                              ILogger logger,
+                                                                              CancellationToken cancellationToken)
   {
     using var scope = logger.BeginScope("Prepare task dependencies for {@TaskIds}",
                                         taskRequests.ViewSelect(req => req.TaskId));
 
-    var allDependencies       = new HashSet<string>();
+    var allDependencies = new HashSet<string>();
     var completedDependencies = new List<string>();
 
     // Get all the results that are a dependency of at least one task
@@ -402,13 +402,13 @@ public static class TaskLifeCycleHelper
   /// <returns>
   ///   Task representing the asynchronous execution of the method
   /// </returns>
-  public static async Task ResolveDependencies(ITaskTable          taskTable,
-                                               IResultTable        resultTable,
-                                               IPushQueueStorage   pushQueueStorage,
-                                               SessionData         sessionData,
+  public static async Task ResolveDependencies(ITaskTable taskTable,
+                                               IResultTable resultTable,
+                                               IPushQueueStorage pushQueueStorage,
+                                               SessionData sessionData,
                                                ICollection<string> results,
-                                               ILogger             logger,
-                                               CancellationToken   cancellationToken = default)
+                                               ILogger logger,
+                                               CancellationToken cancellationToken = default)
   {
     using var activity = logger.BeginScope("Resolving dependencies for {@ResultIds}",
                                            results);
@@ -470,12 +470,12 @@ public static class TaskLifeCycleHelper
   /// <returns>
   ///   Task representing the asynchronous execution of the method
   /// </returns>
-  private static async Task EnqueueReadyTasks(ITaskTable               taskTable,
-                                              IPushQueueStorage        pushQueueStorage,
-                                              SessionData              sessionData,
+  private static async Task EnqueueReadyTasks(ITaskTable taskTable,
+                                              IPushQueueStorage pushQueueStorage,
+                                              SessionData sessionData,
                                               ICollection<MessageData> messages,
-                                              ILogger                  logger,
-                                              CancellationToken        cancellationToken)
+                                              ILogger logger,
+                                              CancellationToken cancellationToken)
   {
     if (!messages.Any())
     {
@@ -514,10 +514,10 @@ public static class TaskLifeCycleHelper
   /// <returns>
   ///   The updated data of the session
   /// </returns>
-  public static async Task<SessionData> ResumeAsync(ITaskTable        taskTable,
-                                                    ISessionTable     sessionTable,
+  public static async Task<SessionData> ResumeAsync(ITaskTable taskTable,
+                                                    ISessionTable sessionTable,
                                                     IPushQueueStorage pushQueueStorage,
-                                                    string            sessionId,
+                                                    string sessionId,
                                                     CancellationToken cancellationToken = default)
   {
     var session = await sessionTable.ResumeSessionAsync(sessionId,
@@ -578,9 +578,9 @@ public static class TaskLifeCycleHelper
   /// <returns>
   ///   The updated data of the session
   /// </returns>
-  public static async Task<SessionData> PauseAsync(ITaskTable        taskTable,
-                                                   ISessionTable     sessionTable,
-                                                   string            sessionId,
+  public static async Task<SessionData> PauseAsync(ITaskTable taskTable,
+                                                   ISessionTable sessionTable,
+                                                   string sessionId,
                                                    CancellationToken cancellationToken = default)
 
   {
@@ -611,25 +611,25 @@ public static class TaskLifeCycleHelper
   /// <param name="logger">Logger</param>
   /// <param name="cancellationToken">Token used to cancel the execution of the method</param>
   /// <returns>The status of the processed task</returns>
-  public static async Task CompleteTaskAsync(ITaskTable        taskTable,
-                                             IResultTable      resultTable,
-                                             IObjectStorage    objectStorage,
+  public static async Task CompleteTaskAsync(ITaskTable taskTable,
+                                             IResultTable resultTable,
+                                             IObjectStorage objectStorage,
                                              IPushQueueStorage pushQueueStorage,
-                                             Submitter         options,
-                                             TaskData          taskData,
-                                             SessionData       sessionData,
-                                             bool              resubmit,
-                                             Output            output,
-                                             ILogger           logger,
+                                             Submitter options,
+                                             TaskData taskData,
+                                             SessionData sessionData,
+                                             bool resubmit,
+                                             Output output,
+                                             ILogger logger,
                                              CancellationToken cancellationToken = default)
   {
     var taskDataEnd = taskData with
-                      {
-                        EndDate = DateTime.UtcNow,
-                        CreationToEndDuration = DateTime.UtcNow   - taskData.CreationDate,
-                        ProcessingToEndDuration = DateTime.UtcNow - taskData.StartDate,
-                        ReceivedToEndDuration = DateTime.UtcNow   - taskData.ReceptionDate,
-                      };
+    {
+      EndDate = DateTime.UtcNow,
+      CreationToEndDuration = DateTime.UtcNow - taskData.CreationDate,
+      ProcessingToEndDuration = DateTime.UtcNow - taskData.StartDate,
+      ReceivedToEndDuration = DateTime.UtcNow - taskData.ReceptionDate,
+    };
 
     switch (output.Status)
     {
@@ -725,8 +725,7 @@ public static class TaskLifeCycleHelper
                                                            {
                                                              taskData.TaskId,
                                                            },
-                                                           "One of the input data is aborted.",
-                                                           CancellationToken.None)
+                                                           reason: $"Task {taskData.TaskId} failed:\n{output.Error}")
                                      .ConfigureAwait(false);
         }
 
@@ -771,8 +770,7 @@ public static class TaskLifeCycleHelper
                                                          {
                                                            taskData.TaskId,
                                                          },
-                                                         "One of the dependent tasks timed out.",
-                                                         CancellationToken.None)
+                                                         reason: $"Task {taskData.TaskId} timed-out:\n{output.Error}")
                                    .ConfigureAwait(false);
         break;
       default:
@@ -797,15 +795,15 @@ public static class TaskLifeCycleHelper
   /// <param name="logger">Logger</param>
   /// <param name="cancellationToken">Token used to cancel the execution of the method</param>
   /// <returns>The status of the processed task</returns>
-  public static async Task<TaskStatus> HandleTaskCrashedWhileProcessing(ITaskTable        taskTable,
-                                                                        IResultTable      resultTable,
-                                                                        IObjectStorage    objectStorage,
+  public static async Task<TaskStatus> HandleTaskCrashedWhileProcessing(ITaskTable taskTable,
+                                                                        IResultTable resultTable,
+                                                                        IObjectStorage objectStorage,
                                                                         IPushQueueStorage pushQueueStorage,
-                                                                        Submitter         options,
-                                                                        TimeSpan          processingCrashedDelay,
-                                                                        SessionData       sessionData,
-                                                                        TaskData          taskData,
-                                                                        ILogger           logger,
+                                                                        Submitter options,
+                                                                        TimeSpan processingCrashedDelay,
+                                                                        SessionData sessionData,
+                                                                        TaskData taskData,
+                                                                        ILogger logger,
                                                                         CancellationToken cancellationToken)
   {
     await Task.Delay(processingCrashedDelay,
@@ -820,26 +818,26 @@ public static class TaskLifeCycleHelper
 
     var subtasks = await taskTable.FindTasksAsync(td => td.CreatedBy == taskData.TaskId && td.InitialTaskId == td.TaskId,
                                                   td => new
-                                                        {
-                                                          td.TaskId,
-                                                          td.Status,
-                                                          td.PayloadId,
-                                                          td.Options,
-                                                          td.ExpectedOutputIds,
-                                                          td.DataDependencies,
-                                                        },
+                                                  {
+                                                    td.TaskId,
+                                                    td.Status,
+                                                    td.PayloadId,
+                                                    td.Options,
+                                                    td.ExpectedOutputIds,
+                                                    td.DataDependencies,
+                                                  },
                                                   cancellationToken)
                                   .ToListAsync(cancellationToken)
                                   .ConfigureAwait(false);
 
-    var    resubmit = true;
+    var resubmit = true;
     string errorMessage;
 
     // If at least one task is not creating, it means that it has potentially been submitted, and might have started.
     // It also means that we created all subtasks and completed all the results of the current task.
     // Therefore, we can safely finish the completion of the current task on behalf of the pod that has crashed.
 
-    var committed    = subtasks.Any(td => td.Status is not TaskStatus.Creating);
+    var committed = subtasks.Any(td => td.Status is not TaskStatus.Creating);
 
     // If no tasks were created, we look for all the tasks that depends on completed results
     if (subtasks.Count == 0)
@@ -918,7 +916,7 @@ public static class TaskLifeCycleHelper
       }
       catch (Exception ex)
       {
-        resubmit     = ex is not ObjectDataNotFoundException;
+        resubmit = ex is not ObjectDataNotFoundException;
         errorMessage = $"Post-processing error: {ex.Message}";
 
         logger.LogError(ex,
