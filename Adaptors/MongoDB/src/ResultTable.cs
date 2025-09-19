@@ -259,6 +259,19 @@ public class ResultTable : BaseTable<Result, ResultDataModelMapping>, IResultTab
     }
   }
 
+  /// <inheritdoc />
+  public async Task DeleteResults(ICollection<string> results,
+                                  CancellationToken   cancellationToken = default)
+  {
+    using var activity         = StartActivity();
+    var       resultCollection = GetCollection();
+
+    await resultCollection.DeleteManyAsync(model => results.Contains(model.ResultId),
+                                           cancellationToken)
+                          .ConfigureAwait(false);
+  }
+
+  /// <inheritdoc />
   public IAsyncEnumerable<T> GetResults<T>(Expression<Func<Result, bool>> filter,
                                            Expression<Func<Result, T>>    convertor,
                                            CancellationToken              cancellationToken = default)
