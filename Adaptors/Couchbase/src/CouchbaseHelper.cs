@@ -30,7 +30,7 @@ namespace ArmoniK.Core.Adapters.Couchbase
     public const int MaxChunkSize = 4 * 1024 * 1023; // ~4MB
     public const char ChunkSeparator = '`';
     private const int DefaultCompressionThreshold = 1024;
-
+    private static BaseTranscoder _transcoder = new LegacyTranscoder();
 
     private const string InternalKeyPrefix = "ArmoniKObject";
 
@@ -237,7 +237,7 @@ namespace ArmoniK.Core.Adapters.Couchbase
         CancellationToken cancellationToken)
     {
       var windowCountMetadataKey = GetWindowCountMetadataKey(key);
-      var windowCountResult = await collection.TryGetAsync(windowCountMetadataKey, options => options.Transcoder(new LegacyTranscoder())).ConfigureAwait(false);
+      var windowCountResult = await collection.TryGetAsync(windowCountMetadataKey, options => options.Transcoder(_transcoder)).ConfigureAwait(false);
       
       if (!windowCountResult.Exists)
       {
@@ -246,6 +246,42 @@ namespace ArmoniK.Core.Adapters.Couchbase
       
       var windowCountBytes = windowCountResult.ContentAs<byte[]>();
       return BitConverter.ToInt32(windowCountBytes, 0);
+    }
+
+    /// <summary>
+    /// Stores the size metadata for a given key.
+    /// </summary>
+    /// <param name="collection">Couchbase collection</param>
+    /// <param name="key">Base key for the object</param>
+    /// <param name="size">Size value to store</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    public static async Task StoreSizeMetadataAsync(
+        ICouchbaseCollection collection,
+        string key,
+        long size,
+        CancellationToken cancellationToken = default)
+    {
+      var sizeMetadataKey = GetSizeMetadataKey(key);
+      var sizeBytes = BitConverter.GetBytes(size);
+      await collection.UpsertAsync(sizeMetadataKey, sizeBytes, options => options.Transcoder(_transcoder)).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Stores the window count metadata for a given key.
+    /// </summary>
+    /// <param name="collection">Couchbase collection</param>
+    /// <param name="key">Base key for the object</param>
+    /// <param name="windowCount">Window count value to store</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    public static async Task StoreWindowCountMetadataAsync(
+        ICouchbaseCollection collection,
+        string key,
+        int windowCount,
+        CancellationToken cancellationToken = default)
+    {
+      var windowCountMetadataKey = GetWindowCountMetadataKey(key);
+      var windowCountBytes = BitConverter.GetBytes(windowCount);
+      await collection.UpsertAsync(windowCountMetadataKey, windowCountBytes, options => options.Transcoder(_transcoder)).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -303,7 +339,7 @@ namespace ArmoniK.Core.Adapters.Couchbase
         CancellationToken cancellationToken)
     {
       var internalKey = GetInternalKey(entry.Key);
-      await collection.UpsertAsync(internalKey, entry.Value, options => options.Transcoder(new LegacyTranscoder())).ConfigureAwait(false);
+      await collection.UpsertAsync(internalKey, entry.Value, options => options.Transcoder(_transcoder)).ConfigureAwait(false);
     }
 
     /// <summary>
