@@ -226,83 +226,29 @@ namespace ArmoniK.Core.Adapters.Couchbase
         var key = Encoding.UTF8.GetString(id);
         var collection = await GetCollectionAsync().ConfigureAwait(false);
         
-        // Try to get window count metadata using helper method
-        int? windowCount = null;
-        try
+        // Get window count from metadata
+        var windowCount = await CouchbaseHelper.GetWindowCountAsync(collection, key, cancellationToken).ConfigureAwait(false);
+        
+        logger_.LogInformation("TryDeleteAsync: Deleting {WindowCount} windows for key {Key}", windowCount, key);
+        
+        // Collect all deletion keys in parallel using helper method
+        var allKeysToDelete = await CouchbaseHelper.CollectWindowDeletionKeysAsync(collection, key, windowCount, cancellationToken).ConfigureAwait(false);
+        
+        // Add metadata keys to deletion list
+        var windowCountMetadataKey = CouchbaseHelper.GetWindowCountMetadataKey(key);
+        allKeysToDelete.Add(windowCountMetadataKey);
+        
+        var sizeMetadataKey = CouchbaseHelper.GetSizeMetadataKey(key);
+        var sizeResult = await collection.TryGetAsync(sizeMetadataKey, options => options.Transcoder(new LegacyTranscoder())).ConfigureAwait(false);
+        if (sizeResult.Exists)
         {
-          windowCount = await CouchbaseHelper.GetWindowCountAsync(collection, key, cancellationToken).ConfigureAwait(false);
-        }
-        catch (ObjectDataNotFoundException)
-        {
-          // Window count metadata not found, will try legacy approach
+          allKeysToDelete.Add(sizeMetadataKey);
         }
         
-        if (windowCount.HasValue)
-        {
-          // Multi-window approach: Delete all windows in parallel with batching
-          logger_.LogInformation("TryDeleteAsync: Deleting {WindowCount} windows for key {Key}", windowCount.Value, key);
-          
-          // Collect all deletion keys in parallel using helper method
-          var allKeysToDelete = await CouchbaseHelper.CollectWindowDeletionKeysAsync(collection, key, windowCount.Value, cancellationToken).ConfigureAwait(false);
-          
-          // Add metadata keys to deletion list
-          var windowCountMetadataKey = CouchbaseHelper.GetWindowCountMetadataKey(key);
-          allKeysToDelete.Add(windowCountMetadataKey);
-          
-          var sizeMetadataKey = CouchbaseHelper.GetSizeMetadataKey(key);
-          var sizeResult = await collection.TryGetAsync(sizeMetadataKey, options => options.Transcoder(new LegacyTranscoder())).ConfigureAwait(false);
-          if (sizeResult.Exists)
-          {
-            allKeysToDelete.Add(sizeMetadataKey);
-          }
-          
-          // Execute deletions in parallel batches using helper method
-          await CouchbaseHelper.ExecuteBatchDeletionsAsync(collection, allKeysToDelete, cancellationToken).ConfigureAwait(false);
-          
-          logger_.LogInformation("Deleted data with key {Key}, total operations: {Count}", key, allKeysToDelete.Count);
-        }
-        else
-        {
-          // Legacy approach: Single window
-          logger_.LogInformation("TryDeleteAsync: Using legacy single-window deletion for key {Key}", key);
-          
-          var internalKey = CouchbaseHelper.GetInternalKey(key);
-          var result = await collection.TryGetAsync(internalKey, o => o.Transcoder(new LegacyTranscoder())).ConfigureAwait(false);
-          
-          if (!result.Exists)
-          {
-            logger_.LogInformation("Key {Key} does not exist, skipping delete", key);
-            return;
-          }
-
-          var mainChunk = result.ContentAs<byte[]>();
-          var allKeysToDelete = new List<string> { internalKey };
-          
-          // Delete additional chunks (if data was split into 4MB chunks)
-          if (mainChunk != null && mainChunk.Length > CouchbaseHelper.MaxChunkSize)
-          {
-            var chunkCount = BitConverter.ToInt32(mainChunk, mainChunk.Length - 4);
-            for (int i = 0; i < chunkCount; i++)
-            {
-              var chunkKey = $"{key}{CouchbaseHelper.ChunkSeparator}{i}";
-              var chunkInternalKey = CouchbaseHelper.GetInternalKey(chunkKey);
-              allKeysToDelete.Add(chunkInternalKey);
-            }
-          }
-          
-          // Delete size metadata if it exists
-          var sizeMetadataKey = CouchbaseHelper.GetSizeMetadataKey(key);
-          var sizeResult = await collection.TryGetAsync(sizeMetadataKey, options => options.Transcoder(new LegacyTranscoder())).ConfigureAwait(false);
-          if (sizeResult.Exists)
-          {
-            allKeysToDelete.Add(sizeMetadataKey);
-          }
-          
-          // Execute deletions in parallel batches using helper method
-          await CouchbaseHelper.ExecuteBatchDeletionsAsync(collection, allKeysToDelete, cancellationToken).ConfigureAwait(false);
-          
-          logger_.LogInformation("Deleted data with key {Key}, total operations: {Count}", key, allKeysToDelete.Count);
-        }
+        // Execute deletions in parallel batches using helper method
+        await CouchbaseHelper.ExecuteBatchDeletionsAsync(collection, allKeysToDelete, cancellationToken).ConfigureAwait(false);
+        
+        logger_.LogInformation("Deleted data with key {Key}, total operations: {Count}", key, allKeysToDelete.Count);
       }
       catch (Exception ex)
       {
