@@ -104,15 +104,9 @@ namespace ArmoniK.Core.Adapters.Couchbase
       // Write to Couchbase with default concurrency
       var windowCount = await CouchbaseHelper.WriteStreamToCouchbaseAsync(collection, processedChunks, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-      // Store the original size as metadata in a separate document
-      var sizeMetadataKey = CouchbaseHelper.GetSizeMetadataKey(key);
-      var sizeBytes = BitConverter.GetBytes(size);
-      await collection.UpsertAsync(sizeMetadataKey, sizeBytes, options => options.Transcoder(new LegacyTranscoder())).ConfigureAwait(false);
-
-      // Store the window count as metadata
-      var windowCountMetadataKey = CouchbaseHelper.GetWindowCountMetadataKey(key);
-      var windowCountBytes = BitConverter.GetBytes(windowCount);
-      await collection.UpsertAsync(windowCountMetadataKey, windowCountBytes, options => options.Transcoder(new LegacyTranscoder())).ConfigureAwait(false);
+      // Store metadata using helper methods
+      await CouchbaseHelper.StoreSizeMetadataAsync(collection, key, size, cancellationToken).ConfigureAwait(false);
+      await CouchbaseHelper.StoreWindowCountMetadataAsync(collection, key, windowCount, cancellationToken).ConfigureAwait(false);
 
       logger_.LogInformation("AddOrUpdateAsync: Completed for key {Key}, total uncompressed size = {Size}, window count = {WindowCount}", key, size, windowCount);
 
