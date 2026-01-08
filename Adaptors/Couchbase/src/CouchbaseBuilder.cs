@@ -15,8 +15,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-using System;
-
 using ArmoniK.Core.Base;
 using ArmoniK.Core.Utils;
 
@@ -29,6 +27,9 @@ using JetBrains.Annotations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+using System;
 
 namespace ArmoniK.Core.Adapters.Couchbase
 {
@@ -38,7 +39,7 @@ namespace ArmoniK.Core.Adapters.Couchbase
     [PublicAPI]
     public void Build(IServiceCollection serviceCollection,
                       ConfigurationManager configuration,
-                      Microsoft.Extensions.Logging.ILogger logger)
+                      ILogger logger)
     {
       Options.CouchbaseSettings couchbaseOptions;
       Options.CouchbaseStorage couchbaseStorageOptions;
@@ -51,51 +52,54 @@ namespace ArmoniK.Core.Adapters.Couchbase
                                   Options.CouchbaseStorage.SettingSection,
                                   out couchbaseStorageOptions);
 
-      logger.LogDebug("Setup connection to Couchbase at {ConnectionString} with user {User}",
-                      couchbaseOptions.ConnectionString,
-                      couchbaseOptions.Login);
+      logger.LogDebug("Couchbase connection settings: ConnectionString={ConnectionString}, IsTls={IsTls}, BootstrapTimeout={BootstrapTimeout}, KvTimeout={KvTimeout}",
+              couchbaseOptions.ConnectionString,
+              couchbaseOptions.IsTls,
+              couchbaseOptions.BootstrapTimeout,
+              couchbaseOptions.KvTimeout);
 
       try
       {
         // Configure Couchbase using AddCouchbase with proper options configuration
+        // This registers IClusterProvider which should be used to get ICluster instances
         serviceCollection.AddCouchbase(options =>
         {
           options.ConnectionString = couchbaseOptions.ConnectionString;
           options.UserName = couchbaseOptions.Login;
           options.Password = couchbaseOptions.Password;
-          
+
           // Extended timeouts for operations
           options.KvTimeout = couchbaseOptions.KvTimeout;
           options.QueryTimeout = couchbaseOptions.QueryTimeout;
           options.ManagementTimeout = couchbaseOptions.ManagementTimeout;
-          
+
           options.NumKvConnections = couchbaseOptions.NumKvConnections;
           options.EnableTcpKeepAlives = couchbaseOptions.EnableTcpKeepAlive;
           options.TcpKeepAliveTime = couchbaseOptions.TcpKeepAliveTime;
           options.TcpKeepAliveInterval = couchbaseOptions.TcpKeepAliveInterval;
-          
+
           // Connection pool settings
           options.MaxKvConnections = couchbaseOptions.MaxKvConnections;
-          
+
           // Retry policy settings
           options.EnableOperationDurationTracing = couchbaseOptions.EnableOperationDurationTracing;
-          
+
           // Configure custom retry strategy
           options.RetryStrategy = new RetryCustom();
-          
+
           if (couchbaseOptions.IsTls)
           {
             options.EnableTls = true;
           }
         });
-
+        serviceCollection.AddSingleton<IPostConfigureOptions<ClusterOptions>, CouchbaseLoggingConfigurator>();
         serviceCollection.AddSingletonWithHealthCheck<IObjectStorage, CouchbaseStorage>(nameof(IObjectStorage));
       }
       catch (Exception ex)
       {
         logger.LogError(ex, "Failed to configure Couchbase. TLS={IsTls}, ConnectionString={ConnectionString}, User={User}",
-                        couchbaseOptions.IsTls, 
-                        couchbaseOptions.ConnectionString, 
+                        couchbaseOptions.IsTls,
+                        couchbaseOptions.ConnectionString,
                         couchbaseOptions.Login);
         throw;
       }
@@ -111,9 +115,32 @@ namespace ArmoniK.Core.Adapters.Couchbase
     /// <inheritdoc />
     public RetryAction RetryAfter(IRequest request, RetryReason reason)
     {
-      return request.Attempts < 3 
-        ? RetryAction.Duration(TimeSpan.FromSeconds(1)) 
+      return request.Attempts < 3
+        ? RetryAction.Duration(TimeSpan.FromSeconds(1))
         : RetryAction.Duration(null);
+    }
+  }
+  /// <summary>
+  /// Configures Couchbase SDK logging using ILoggerFactory from DI.
+  /// Uses PostConfigure to ensure it runs after the main AddCouchbase configuration.
+  /// </summary>
+  internal class CouchbaseLoggingConfigurator : IPostConfigureOptions<ClusterOptions>
+  {
+    private readonly ILoggerFactory loggerFactory_;
+    private readonly ILogger logger_;
+
+    public CouchbaseLoggingConfigurator(ILoggerFactory loggerFactory, ILogger<CouchbaseLoggingConfigurator> logger)
+    {
+      loggerFactory_ = loggerFactory;
+      logger_ = logger;
+    }
+
+    public void PostConfigure(string? name, ClusterOptions options)
+    {
+      // Enable Couchbase SDK logging with the application's ILoggerFactory
+      options.WithLogging(loggerFactory_);
+      logger_.LogDebug("Couchbase SDK logging configured with ILoggerFactory from DI (PostConfigure)");
+
     }
   }
 }
