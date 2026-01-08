@@ -22,6 +22,7 @@ using ArmoniK.Utils;
 
 using Couchbase;
 using Couchbase.Core.IO.Transcoders;
+using Couchbase.Extensions.DependencyInjection;
 using Couchbase.KeyValue;
 
 using DnsClient.Internal;
@@ -38,7 +39,8 @@ namespace ArmoniK.Core.Adapters.Couchbase
   public class CouchbaseStorage : IObjectStorage
   {
     private readonly ILogger<CouchbaseStorage> logger_;
-    private readonly ICluster couchbase_;
+    private readonly IClusterProvider clusterProvider_;
+    private readonly Options.CouchbaseSettings couchbaseSettings_;
     private readonly Options.CouchbaseStorage couchbaseStorageOptions_;
     private readonly Lazy<Task<ICouchbaseCollection>> collectionLazy_;
     private bool isInitialized_;
@@ -48,21 +50,25 @@ namespace ArmoniK.Core.Adapters.Couchbase
     /// <summary>
     ///   <see cref="IObjectStorage" /> implementation for Couchbase
     /// </summary>
-    /// <param name="couchbase">Connection to Couchbase database</param>
+    /// <param name="clusterProvider">Couchbase cluster provider from DI</param>
+    /// <param name="couchbaseSettings">Couchbase connection settings</param>
     /// <param name="couchbaseStorageOptions">Couchbase object storage options</param>
     /// <param name="logger">Logger used to print logs</param>
-    public CouchbaseStorage(ICluster couchbase,
-                         Options.CouchbaseStorage couchbaseStorageOptions,
-                         ILogger<CouchbaseStorage> logger)
+    public CouchbaseStorage(IClusterProvider clusterProvider,
+                     Options.CouchbaseStorage couchbaseStorageOptions,
+                     Options.CouchbaseSettings couchbaseSettings,
+                     ILogger<CouchbaseStorage> logger)
     {
-      couchbase_ = couchbase;
+      clusterProvider_ = clusterProvider;
       couchbaseStorageOptions_ = couchbaseStorageOptions;
+      couchbaseSettings_ = couchbaseSettings;
       logger_ = logger;
       
       collectionLazy_ = new Lazy<Task<ICouchbaseCollection>>(async () =>
       {
         logger_.LogDebug("Initializing Couchbase bucket and collection (lazy)");
-        var bucket = await couchbase_.BucketAsync(couchbaseStorageOptions_.BucketName).ConfigureAwait(false);
+        var cluster = await clusterProvider_.GetClusterAsync().ConfigureAwait(false);
+        var bucket = await cluster.BucketAsync(couchbaseStorageOptions_.BucketName).ConfigureAwait(false);
         var scope = bucket.Scope(couchbaseStorageOptions_.ScopeName);
         var collection = scope.Collection(couchbaseStorageOptions_.CollectionName);
         logger_.LogDebug("Couchbase collection initialized: {Bucket}/{Scope}/{Collection}",
@@ -100,9 +106,9 @@ namespace ArmoniK.Core.Adapters.Couchbase
       
       // Process and write the chunks with size tracking
       var processedChunks = CouchbaseHelper.ProcessStreamAsync(key, TrackSizeAndPassThrough(cancellationToken), cancellationToken: cancellationToken);
-      
+
       // Write to Couchbase with default concurrency
-      var windowCount = await CouchbaseHelper.WriteStreamToCouchbaseAsync(collection, processedChunks, cancellationToken: cancellationToken).ConfigureAwait(false);
+      var windowCount = await CouchbaseHelper.WriteStreamToCouchbaseAsync(collection, processedChunks, couchbaseStorageOptions_.DocumentTimeToLive, cancellationToken: cancellationToken).ConfigureAwait(false);
 
       // Store metadata using helper methods
       await CouchbaseHelper.StoreSizeMetadataAsync(collection, key, size, cancellationToken).ConfigureAwait(false);
@@ -121,19 +127,43 @@ namespace ArmoniK.Core.Adapters.Couchbase
                                                                         ? HealthCheckResult.Healthy()
                                                                         : HealthCheckResult.Unhealthy("Couchbase not initialized yet.")),
         HealthCheckTag.Liveness => Task.FromResult(isInitialized_ ? HealthCheckResult.Healthy()
-                                                     : HealthCheckResult.Unhealthy("Couchbase not initialized or connection dropped.")),
+                                                      : HealthCheckResult.Unhealthy("Couchbase not initialized or connection dropped.")),
         _ => throw new ArgumentOutOfRangeException(nameof(tag),
-                                                   tag,
-                                                   null),
+                                                    tag,
+                                                    null),
       };
-      
+
     public async Task Init(CancellationToken cancellationToken)
     {
       if (!isInitialized_)
       {
-        await couchbase_.WaitUntilReadyAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
-        // Eagerly initialize the collection during Init to catch any errors early
+        logger_.LogInformation("Initializing Couchbase storage - getting cluster...");
+        var cluster = await clusterProvider_.GetClusterAsync().ConfigureAwait(false);
+
+        try
+        {
+          logger_.LogInformation("Opening bucket: {Bucket} and waiting until ready with timeout {BootstrapTimeout}",
+                                couchbaseStorageOptions_.BucketName,
+                                couchbaseSettings_.BootstrapTimeout);
+
+          var bucket = await cluster.BucketAsync(couchbaseStorageOptions_.BucketName).ConfigureAwait(false);
+
+          await bucket.WaitUntilReadyAsync(couchbaseSettings_.BootstrapTimeout).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+          logger_.LogError(ex, "Failed to open or wait for bucket ready. Bucket={Bucket}, BootstrapTimeout={BootstrapTimeout}",
+                          couchbaseStorageOptions_.BucketName,
+                          couchbaseSettings_.BootstrapTimeout);
+          throw;
+        }
+
+        logger_.LogInformation("Initializing collection: {Bucket}/{Scope}/{Collection}",
+                              couchbaseStorageOptions_.BucketName,
+                              couchbaseStorageOptions_.ScopeName,
+                              couchbaseStorageOptions_.CollectionName);
         _ = await GetCollectionAsync().ConfigureAwait(false);
+        logger_.LogInformation("Collection initialized successfully");
       }
 
       isInitialized_ = true;

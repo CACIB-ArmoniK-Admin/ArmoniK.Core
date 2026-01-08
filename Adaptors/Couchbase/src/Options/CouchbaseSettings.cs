@@ -56,7 +56,12 @@ namespace ArmoniK.Core.Adapters.Couchbase.Options
     ///   Timeout duration for N1QL query operations. Default is 75 seconds.
     /// </summary>
     public TimeSpan QueryTimeout { get; init; } = TimeSpan.FromSeconds(75);
-    
+
+    /// <summary>
+    ///   Timeout duration for bootstrap/connection initialization. Default is 30 seconds.
+    /// </summary>
+    public TimeSpan BootstrapTimeout { get; init; } = TimeSpan.FromSeconds(30);
+
     /// <summary>
     ///   Timeout duration for management API operations (e.g., bucket/user management). Default is 75 seconds.
     /// </summary>
