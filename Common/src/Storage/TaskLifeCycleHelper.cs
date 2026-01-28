@@ -710,13 +710,14 @@ public static class TaskLifeCycleHelper
                                           .ToListAsync(cancellationToken)
                                           .ConfigureAwait(false);
 
-    await ResultLifeCycleHelper.AbortTasksAndResults(taskTable,
-                                                     resultTable,
-                                                     subtasks,
-                                                     resultsToAbort,
-                                                     errorMessage,
-                                                     TaskStatus.Cancelled,
-                                                     cancellationToken)
+    await ResultLifeCycleHelper.TerminateTasksAndResults(taskTable,
+                                                         resultTable,
+                                                         subtasks,
+                                                         resultsToAbort,
+                                                         errorMessage,
+                                                         TaskStatus.Cancelled,
+                                                         false,
+                                                         cancellationToken)
                                .ConfigureAwait(false);
 
     // Change current task status to Retried
@@ -814,14 +815,14 @@ public static class TaskLifeCycleHelper
                                                cancellationToken)
                                  .ConfigureAwait(false);
 
-    await ResultLifeCycleHelper.AbortTasksAndResults(taskTable,
-                                                     resultTable,
-                                                     new[]
-                                                     {
-                                                       taskData.TaskId,
-                                                     },
-                                                     reason: $"Task {taskData.TaskId} {reason}:\n{errorMessage}",
-                                                     cancellationToken: cancellationToken)
+    await ResultLifeCycleHelper.TerminateTasksAndResults(taskTable,
+                                                         resultTable,
+                                                         new[]
+                                                         {
+                                                           taskData.TaskId,
+                                                         },
+                                                         reason: $"Task {taskData.TaskId} {reason}:\n{errorMessage}",
+                                                         cancellationToken: cancellationToken)
                                .ConfigureAwait(false);
 
     return updated;
@@ -1014,13 +1015,14 @@ public static class TaskLifeCycleHelper
                                           .ToListAsync(cancellationToken)
                                           .ConfigureAwait(false);
 
-    await ResultLifeCycleHelper.AbortTasksAndResults(taskTable,
-                                                     resultTable,
-                                                     subtasks.ViewSelect(td => td.TaskId),
-                                                     resultsToAbort,
-                                                     errorMessage,
-                                                     TaskStatus.Cancelled,
-                                                     cancellationToken)
+    await ResultLifeCycleHelper.TerminateTasksAndResults(taskTable,
+                                                         resultTable,
+                                                         subtasks.ViewSelect(td => td.TaskId),
+                                                         resultsToAbort,
+                                                         errorMessage,
+                                                         TaskStatus.Cancelled,
+                                                         true,
+                                                         cancellationToken)
                                .ConfigureAwait(false);
 
     // Retry or abort the current task
@@ -1030,19 +1032,19 @@ public static class TaskLifeCycleHelper
                                         pushQueueStorage,
                                         taskData,
                                         sessionData,
-                                        subtasks.ViewSelect(td => td.TaskId),
-                                        errorMessage,
-                                        logger,
-                                        cancellationToken)
-                       : AbortTaskAsync(taskTable,
-                                        resultTable,
-                                        objectStorage,
-                                        options,
-                                        taskData,
-                                        OutputStatus.Error,
-                                        errorMessage,
-                                        logger,
-                                        cancellationToken);
+
+                         [],
+        errorMessage,
+        logger,
+        cancellationToken) : AbortTaskAsync(taskTable,
+                                            resultTable,
+                                            objectStorage,
+                                            options,
+                                            taskData,
+                                            OutputStatus.Error,
+                                            errorMessage,
+                                            logger,
+                                            cancellationToken);
 
     return (await updateTask.ConfigureAwait(false)).Status;
   }
