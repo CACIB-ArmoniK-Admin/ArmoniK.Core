@@ -1,32 +1,33 @@
 // This file is part of the ArmoniK project
-// 
-// Copyright (C) ANEO, 2021-2025. All rights reserved.
-// 
+//
+// Copyright (C) ANEO, 2021-2026. All rights reserved.
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
 // by the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// 
+//
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY, without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
-// 
+//
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 using System.Collections.Generic;
 
+using ArmoniK.Utils.DocAttribute;
+
 namespace ArmoniK.Core.Adapters.SQS;
 
+[ExtractDocumentation("Options for SQS")]
 internal class SQS
 {
-  public const string SettingSection = nameof(SQS);
-
   /// <summary>
-  ///   Partition from which tasks are pulled by the polling agent
+  ///   The name of the configuration section for SQS settings.
   /// </summary>
-  public string PartitionId { get; set; } = string.Empty;
+  public const string SettingSection = nameof(SQS);
 
   /// <summary>
   ///   AWS endpoint containing the SQS instance
@@ -82,4 +83,14 @@ internal class SQS
   ///   </a>
   /// </remarks>
   public Dictionary<string, string> Attributes { get; set; } = new();
+
+  /// <summary>
+  ///   Maximum number of retry attempts for failed operations.
+  /// </summary>
+  public int MaxRetries { get; set; } = 5;
+
+  /// <summary>
+  /// Use the message group Id SQS property to ensure that messages are sent within groupId.
+  /// </summary>
+  public bool UseSessionMessageGroupId { get; set; } = false;
 }
