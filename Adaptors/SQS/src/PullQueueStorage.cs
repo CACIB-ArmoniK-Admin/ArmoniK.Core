@@ -1,6 +1,6 @@
 // This file is part of the ArmoniK project
 // 
-// Copyright (C) ANEO, 2021-2025. All rights reserved.
+// Copyright (C) ANEO, 2021-2026. All rights reserved.
 // 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -17,7 +17,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -65,9 +64,14 @@ internal class PullQueueStorage : IPullQueueStorage
       throw new InvalidOperationException($"{nameof(PullQueueStorage)} should be initialized before calling this method.");
     }
 
+    var queueInfos = new List<(string queueUrl, string queueName, int priority)>();
 
-    foreach (var queueUrl in queueUrls_.Reverse())
+    var maxPriority = int.Max(options_.MaxPriority,
+                              1);
+    for (var i = maxPriority; i >= 1; i--)
     {
+      var queueUrl = queueUrls_[i];
+
       logger_.LogDebug("Try pulling {NbMessages} from {QueueUrl} with options {@SqsOptions}",
                        nbMessages,
                        queueUrl,

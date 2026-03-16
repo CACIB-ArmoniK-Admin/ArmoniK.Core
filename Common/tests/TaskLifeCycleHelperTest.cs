@@ -1,6 +1,6 @@
 // This file is part of the ArmoniK project
 // 
-// Copyright (C) ANEO, 2021-2025. All rights reserved.
+// Copyright (C) ANEO, 2021-2026. All rights reserved.
 // 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -24,7 +24,6 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-using ArmoniK.Api.gRPC.V1;
 using ArmoniK.Core.Base;
 using ArmoniK.Core.Common.gRPC.Convertors;
 using ArmoniK.Core.Common.gRPC.Services;
@@ -41,6 +40,7 @@ using NUnit.Framework;
 
 using ResultStatus = ArmoniK.Core.Common.Storage.ResultStatus;
 using SessionStatus = ArmoniK.Core.Common.Storage.SessionStatus;
+using TaskOptions = ArmoniK.Api.gRPC.V1.TaskOptions;
 using TaskRequest = ArmoniK.Core.Common.gRPC.Services.TaskRequest;
 using TaskStatus = ArmoniK.Core.Common.Storage.TaskStatus;
 
@@ -397,20 +397,16 @@ public class TaskLifeCycleHelperTest
                 {
                   new(Guid.NewGuid()
                           .ToString(),
-                      results[0]
-                        .ResultId,
+                      results[0].ResultId,
                       holder.Options.ToTaskOptions(),
                       new List<string>
                       {
-                        results[3]
-                          .ResultId,
+                        results[3].ResultId,
                       },
                       new List<string>
                       {
-                        results[1]
-                          .ResultId,
-                        results[2]
-                          .ResultId,
+                        results[1].ResultId,
+                        results[2].ResultId,
                       }),
                 };
 
@@ -451,8 +447,7 @@ public class TaskLifeCycleHelperTest
 
     // complete first data dependency
     await holder.ResultTable.CompleteResult(sessionId,
-                                            results[1]
-                                              .ResultId,
+                                            results[1].ResultId,
                                             10,
                                             Encoding.UTF8.GetBytes("first data dependency"))
                 .ConfigureAwait(false);
@@ -463,8 +458,7 @@ public class TaskLifeCycleHelperTest
                                                   sessionData,
                                                   new List<string>
                                                   {
-                                                    results[1]
-                                                      .ResultId,
+                                                    results[1].ResultId,
                                                   },
                                                   NullLogger.Instance)
                              .ConfigureAwait(false);
@@ -480,8 +474,7 @@ public class TaskLifeCycleHelperTest
 
     // complete second data dependency
     await holder.ResultTable.CompleteResult(sessionId,
-                                            results[2]
-                                              .ResultId,
+                                            results[2].ResultId,
                                             10,
                                             Encoding.UTF8.GetBytes("second data dependency"))
                 .ConfigureAwait(false);
@@ -492,8 +485,7 @@ public class TaskLifeCycleHelperTest
                                                   sessionData,
                                                   new List<string>
                                                   {
-                                                    results[2]
-                                                      .ResultId,
+                                                    results[2].ResultId,
                                                   },
                                                   NullLogger.Instance)
                              .ConfigureAwait(false);
@@ -597,20 +589,16 @@ public class TaskLifeCycleHelperTest
                 {
                   new(Guid.NewGuid()
                           .ToString(),
-                      results[0]
-                        .ResultId,
+                      results[0].ResultId,
                       holder.Options.ToTaskOptions(),
                       new List<string>
                       {
-                        results[3]
-                          .ResultId,
+                        results[3].ResultId,
                       },
                       new List<string>
                       {
-                        results[1]
-                          .ResultId,
-                        results[2]
-                          .ResultId,
+                        results[1].ResultId,
+                        results[2].ResultId,
                       }),
                 };
 
@@ -752,20 +740,16 @@ public class TaskLifeCycleHelperTest
                 {
                   new(Guid.NewGuid()
                           .ToString(),
-                      results[0]
-                        .ResultId,
+                      results[0].ResultId,
                       holder.Options.ToTaskOptions(),
                       new List<string>
                       {
-                        results[3]
-                          .ResultId,
+                        results[3].ResultId,
                       },
                       new List<string>
                       {
-                        results[1]
-                          .ResultId,
-                        results[2]
-                          .ResultId,
+                        results[1].ResultId,
+                        results[2].ResultId,
                       }),
                 };
 
@@ -806,14 +790,12 @@ public class TaskLifeCycleHelperTest
 
     // complete first data dependency
     await holder.ResultTable.CompleteResult(sessionId,
-                                            results[1]
-                                              .ResultId,
+                                            results[1].ResultId,
                                             10,
                                             Encoding.UTF8.GetBytes("first data dependency"))
                 .ConfigureAwait(false);
     await holder.ResultTable.CompleteResult(sessionId,
-                                            results[2]
-                                              .ResultId,
+                                            results[2].ResultId,
                                             10,
                                             Encoding.UTF8.GetBytes("second data dependency"))
                 .ConfigureAwait(false);
@@ -823,10 +805,8 @@ public class TaskLifeCycleHelperTest
                                                   sessionData,
                                                   new List<string>
                                                   {
-                                                    results[1]
-                                                      .ResultId,
-                                                    results[2]
-                                                      .ResultId,
+                                                    results[1].ResultId,
+                                                    results[2].ResultId,
                                                   },
                                                   NullLogger.Instance)
                              .ConfigureAwait(false);
@@ -973,20 +953,16 @@ public class TaskLifeCycleHelperTest
                 {
                   new(Guid.NewGuid()
                           .ToString(),
-                      results[0]
-                        .ResultId,
+                      results[0].ResultId,
                       holder.Options.ToTaskOptions(),
                       new List<string>
                       {
-                        results[3]
-                          .ResultId,
+                        results[3].ResultId,
                       },
                       new List<string>
                       {
-                        results[1]
-                          .ResultId,
-                        results[2]
-                          .ResultId,
+                        results[1].ResultId,
+                        results[2].ResultId,
                       }),
                 };
 
@@ -1009,10 +985,8 @@ public class TaskLifeCycleHelperTest
 
     await Task.WhenAll(FinalizeTask(),
                        FinalizeTask(),
-                       CompleteResult(results[1]
-                                        .ResultId),
-                       CompleteResult(results[2]
-                                        .ResultId))
+                       CompleteResult(results[1].ResultId),
+                       CompleteResult(results[2].ResultId))
               .ConfigureAwait(false);
 
     taskData = await holder.TaskTable.ReadTaskAsync(taskId)

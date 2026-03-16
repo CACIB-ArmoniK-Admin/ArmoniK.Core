@@ -1,6 +1,6 @@
 // This file is part of the ArmoniK project
 // 
-// Copyright (C) ANEO, 2021-2025. All rights reserved.
+// Copyright (C) ANEO, 2021-2026. All rights reserved.
 // 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -512,9 +512,10 @@ public static class TaskLifeCycleHelper
       return;
     }
 
-    if (sessionData.Status != SessionStatus.Paused)
+    if (sessionData.Status is not SessionStatus.Paused)
     {
-      foreach (var group in messages.GroupBy(msg => (msg.Options.PartitionId, msg.Options.Priority)))
+      var groupedMessageByPartitionAndOrderedByPriority = GroupMessageByPartitionAndOrderItByPriority(messages);
+      foreach (var group in groupedMessageByPartitionAndOrderedByPriority)
       {
         await pushQueueStorage.PushMessagesAsync(group,
                                                  group.Key.PartitionId,
@@ -532,6 +533,11 @@ public static class TaskLifeCycleHelper
                                          cancellationToken)
                    .ConfigureAwait(false);
   }
+
+  internal static IEnumerable<IGrouping<(string PartitionId, int PriorityId), MessageData>> GroupMessageByPartitionAndOrderItByPriority(
+    IEnumerable<MessageData> dataMessages)
+    => dataMessages.OrderByDescending(dm => dm.Options.Priority)
+                   .GroupBy(msg => (msg.Options.PartitionId, msg.Options.Priority));
 
   /// <summary>
   ///   Resume session and its paused tasks
@@ -559,6 +565,7 @@ public static class TaskLifeCycleHelper
                                                                                     data.SessionId,
                                                                                     data.Options),
                                                             cancellationToken)
+                                            .OrderByDescending(msg => msg.Options.Priority)
                                             .GroupBy(msg => (msg.Options.PartitionId, msg.Options.Priority))
                                             .WithCancellation(cancellationToken)
                                             .ConfigureAwait(false))
@@ -1032,19 +1039,19 @@ public static class TaskLifeCycleHelper
                                         pushQueueStorage,
                                         taskData,
                                         sessionData,
-
-                         [],
-        errorMessage,
-        logger,
-        cancellationToken) : AbortTaskAsync(taskTable,
-                                            resultTable,
-                                            objectStorage,
-                                            options,
-                                            taskData,
-                                            OutputStatus.Error,
-                                            errorMessage,
-                                            logger,
-                                            cancellationToken);
+                                        [],
+                                        errorMessage,
+                                        logger,
+                                        cancellationToken)
+                       : AbortTaskAsync(taskTable,
+                                        resultTable,
+                                        objectStorage,
+                                        options,
+                                        taskData,
+                                        OutputStatus.Error,
+                                        errorMessage,
+                                        logger,
+                                        cancellationToken);
 
     return (await updateTask.ConfigureAwait(false)).Status;
   }
