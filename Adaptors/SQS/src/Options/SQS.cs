@@ -1,6 +1,6 @@
 // This file is part of the ArmoniK project
 // 
-// Copyright (C) ANEO, 2021-2025. All rights reserved.
+// Copyright (C) ANEO, 2021-2026. All rights reserved.
 // 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -82,4 +82,9 @@ internal class SQS
   ///   </a>
   /// </remarks>
   public Dictionary<string, string> Attributes { get; set; } = new();
+
+  /// <summary>
+  ///   Use the message group Id SQS property to ensure that messages are sent within groupId.
+  /// </summary>
+  public bool UseSessionMessageGroupId { get; set; } = false;
 }

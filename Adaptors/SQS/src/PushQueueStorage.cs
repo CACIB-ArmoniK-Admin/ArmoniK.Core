@@ -1,6 +1,6 @@
 // This file is part of the ArmoniK project
 // 
-// Copyright (C) ANEO, 2021-2025. All rights reserved.
+// Copyright (C) ANEO, 2021-2026. All rights reserved.
 // 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
@@ -24,6 +24,7 @@ using System.Threading.Tasks;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 
+using ArmoniK.Core.Adapters.SQS.Extensions;
 using ArmoniK.Core.Base;
 using ArmoniK.Core.Base.DataStructures;
 using ArmoniK.Utils;
@@ -83,12 +84,7 @@ internal class PushQueueStorage : IPushQueueStorage
                                    async entries =>
                                    {
                                      var (queueUrl, chunk) = entries;
-                                     var entriesList = chunk.Select(data => new SendMessageBatchRequestEntry
-                                                                            {
-                                                                              Id = Guid.NewGuid()
-                                                                                       .ToString(),
-                                                                              MessageBody = data.TaskId,
-                                                                            })
+                                     var entriesList = chunk.Select(data => data.ToBatchRequestEntry(options_))
                                                             .ToList();
                                      var response = await client_.SendMessageBatchAsync(new SendMessageBatchRequest
                                                                                         {
