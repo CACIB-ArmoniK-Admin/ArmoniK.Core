@@ -1,17 +1,17 @@
 // This file is part of the ArmoniK project
-// 
+//
 // Copyright (C) ANEO, 2021-2026. All rights reserved.
-// 
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
 // by the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// 
+//
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY, without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
-// 
+//
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
@@ -43,11 +43,11 @@ namespace ArmoniK.Core.Common.Stream.Worker;
 public class WorkerStreamHandler : IWorkerStreamHandler
 {
   private readonly GrpcChannelProvider                     channelProvider_;
+  private readonly SemaphoreSlim                           initSemaphore_ = new(1, 1);
   private readonly ILogger<WorkerStreamHandler>            logger_;
   private readonly InitWorker                              optionsInitWorker_;
-  private          bool                                    isInitialized_;
-  private          int                                     retryCheck_;
-  private          Api.gRPC.V1.Worker.Worker.WorkerClient? workerClient_;
+  private volatile bool                                    isInitialized_;
+  private volatile Api.gRPC.V1.Worker.Worker.WorkerClient? workerClient_;
 
   /// <summary>
   ///   Initializes a new instance of the <see cref="WorkerStreamHandler" /> class.
@@ -72,39 +72,58 @@ public class WorkerStreamHandler : IWorkerStreamHandler
       return;
     }
 
-    for (var retry = 1; retry < optionsInitWorker_.WorkerCheckRetries; ++retry)
+    await initSemaphore_.WaitAsync(cancellationToken)
+                        .ConfigureAwait(false);
+    try
     {
-      try
+      if (isInitialized_)
       {
-        var channel = channelProvider_.Get();
-        workerClient_ = new Api.gRPC.V1.Worker.Worker.WorkerClient(channel);
-
-        var check = await CheckWorker(cancellationToken)
-                      .ConfigureAwait(false);
-
-        if (!check)
-        {
-          throw new ArmoniKException("Worker Health Check was not successful");
-        }
-
-        isInitialized_ = true;
         return;
       }
-      catch (Exception ex)
-      {
-        logger_.LogError(ex,
-                         "Failed to create worker channel, retry in {seconds}",
-                         optionsInitWorker_.WorkerCheckDelay * retry);
-        await Task.Delay(optionsInitWorker_.WorkerCheckDelay * retry,
-                         cancellationToken)
-                  .ConfigureAwait(false);
-      }
-    }
 
-    var e = new ArmoniKException("Could not get grpc channel");
-    logger_.LogError(e,
-                     "Could not get grpc channel");
-    throw e;
+      // Note: Per-call transient gRPC failures (Unavailable, Internal) are handled
+      // by the native gRPC retry policy configured on the channel (ServiceConfig).
+      // This Init retry loop only waits for the worker process to become available at startup
+      // or after a connection loss detected in StartTaskProcessing.
+      // See: https://learn.microsoft.com/en-us/aspnet/core/grpc/retries
+      for (var retry = 1; retry < optionsInitWorker_.WorkerCheckRetries; ++retry)
+      {
+        try
+        {
+          var channel = channelProvider_.Get();
+          workerClient_ = new Api.gRPC.V1.Worker.Worker.WorkerClient(channel);
+
+          var check = await CheckWorker(cancellationToken)
+                        .ConfigureAwait(false);
+
+          if (!check)
+          {
+            throw new ArmoniKException("Worker Health Check was not successful");
+          }
+
+          isInitialized_ = true;
+          return;
+        }
+        catch (Exception ex)
+        {
+          logger_.LogError(ex,
+                           "Failed to create worker channel, retry in {seconds}",
+                           optionsInitWorker_.WorkerCheckDelay * retry);
+          await Task.Delay(optionsInitWorker_.WorkerCheckDelay * retry,
+                           cancellationToken)
+                    .ConfigureAwait(false);
+        }
+      }
+
+      var e = new ArmoniKException("Could not get grpc channel");
+      logger_.LogError(e,
+                       "Could not get grpc channel");
+      throw e;
+    }
+    finally
+    {
+      initSemaphore_.Release();
+    }
   }
 
   /// <inheritdoc />
@@ -117,7 +136,6 @@ public class WorkerStreamHandler : IWorkerStreamHandler
         return HealthCheckResult.Unhealthy("Worker not yet initialized");
       }
 
-      retryCheck_++;
       var check = await CheckWorker(CancellationToken.None)
                     .ConfigureAwait(false);
 
@@ -126,7 +144,6 @@ public class WorkerStreamHandler : IWorkerStreamHandler
         return HealthCheckResult.Unhealthy("Health check on worker was not successful (too many retries)");
       }
 
-      retryCheck_ = 0;
       return HealthCheckResult.Healthy();
     }
     catch (Exception ex)
@@ -138,7 +155,10 @@ public class WorkerStreamHandler : IWorkerStreamHandler
 
   /// <inheritdoc />
   public void Dispose()
-    => GC.SuppressFinalize(this);
+  {
+    initSemaphore_.Dispose();
+    GC.SuppressFinalize(this);
+  }
 
   /// <inheritdoc />
   public async Task<Output> StartTaskProcessing(TaskData          taskData,
@@ -146,6 +166,63 @@ public class WorkerStreamHandler : IWorkerStreamHandler
                                                 string            dataFolder,
                                                 Configuration     configuration,
                                                 CancellationToken cancellationToken)
+  {
+    if (workerClient_ is null)
+    {
+      throw new ArmoniKException("Worker client should be initialized");
+    }
+
+    try
+    {
+      return await SendProcessRequestAsync(taskData,
+                                           token,
+                                           dataFolder,
+                                           configuration,
+                                           cancellationToken)
+               .ConfigureAwait(false);
+    }
+    catch (RpcException e) when (e.StatusCode is StatusCode.Unavailable)
+    {
+      // The gRPC retry policy (ServiceConfig) has already exhausted all per-call retries.
+      // The worker connection is lost — reset state and attempt a full reconnection
+      // before retrying the task once. If reconnection also fails, the exception propagates
+      // to TaskHandler which will resubmit the task to another pod.
+      logger_.LogWarning(e,
+                         "Worker connection lost during task processing, attempting to reconnect");
+
+      isInitialized_ = false;
+      workerClient_  = null;
+
+      // Use an independent timeout for reconnection so that a cancelled task token
+      // (e.g. lateCts already fired due to the grace delay expiring) does not prevent
+      // the worker from being reconnected after a crash/restart.
+      // The timeout is bounded by WorkerCheckRetries × WorkerCheckDelay so it cannot
+      // block indefinitely.
+      var reconnectTimeout = TimeSpan.FromSeconds(optionsInitWorker_.WorkerCheckRetries * optionsInitWorker_.WorkerCheckDelay.TotalSeconds);
+      using var reconnectCts = new CancellationTokenSource(reconnectTimeout);
+
+      await Init(reconnectCts.Token)
+        .ConfigureAwait(false);
+
+      logger_.LogInformation("Reconnected to worker, retrying task processing");
+
+      return await SendProcessRequestAsync(taskData,
+                                           token,
+                                           dataFolder,
+                                           configuration,
+                                           cancellationToken)
+               .ConfigureAwait(false);
+    }
+  }
+
+  /// <summary>
+  ///   Sends the process request to the worker and converts the response to an internal output.
+  /// </summary>
+  private async Task<Output> SendProcessRequestAsync(TaskData          taskData,
+                                                     string            token,
+                                                     string            dataFolder,
+                                                     Configuration     configuration,
+                                                     CancellationToken cancellationToken)
   {
     if (workerClient_ is null)
     {
