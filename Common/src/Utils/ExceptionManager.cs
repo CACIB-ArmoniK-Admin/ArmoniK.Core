@@ -1,17 +1,17 @@
 // This file is part of the ArmoniK project
-// 
+//
 // Copyright (C) ANEO, 2021-2026. All rights reserved.
-// 
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
 // by the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// 
+//
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY, without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
-// 
+//
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
@@ -52,6 +52,7 @@ public class ExceptionManager : IDisposable, IHostApplicationLifetime, IHostLife
 
   private readonly ILogger? logger_;
   private readonly int      maxError_;
+  private          int      failed_;
   private          int      nbError_;
   private          int      registeredApplications_;
 
@@ -128,9 +129,16 @@ public class ExceptionManager : IDisposable, IHostApplicationLifetime, IHostLife
     => lateCts_.Token;
 
   /// <summary>
-  ///   Whether there were too many errors
+  ///   Whether there were too many errors or a fatal error occurred
   /// </summary>
-  public bool Failed { get; private set; }
+  public bool Failed
+    => Volatile.Read(ref failed_) != 0;
+
+  /// <summary>
+  ///   Whether the application is shutting down (gracefully or due to failure)
+  /// </summary>
+  public bool IsShuttingDown
+    => earlyCts_.IsCancellationRequested;
 
   /// <inheritdoc />
   public void Dispose()
@@ -177,7 +185,8 @@ public class ExceptionManager : IDisposable, IHostApplicationLifetime, IHostLife
   /// <param name="external">Whether cancellation is external</param>
   public void StopApplication(bool external)
   {
-    nbError_ = maxError_ + 1;
+    Interlocked.Exchange(ref nbError_,
+                         maxError_ + 1);
 
     if (logger_ is not null)
     {
@@ -239,7 +248,8 @@ public class ExceptionManager : IDisposable, IHostApplicationLifetime, IHostLife
 
     if (nbError >= maxError_ + 1)
     {
-      Failed = true;
+      Volatile.Write(ref failed_,
+                     1);
     }
   }
 
@@ -281,7 +291,8 @@ public class ExceptionManager : IDisposable, IHostApplicationLifetime, IHostLife
                  args);
     }
 
-    Failed = true;
+    Volatile.Write(ref failed_,
+                   1);
     earlyCts_.Cancel();
   }
 
