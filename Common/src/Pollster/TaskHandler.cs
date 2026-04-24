@@ -1,17 +1,17 @@
 // This file is part of the ArmoniK project
-// 
+//
 // Copyright (C) ANEO, 2021-2026. All rights reserved.
-// 
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
 // by the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// 
+//
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY, without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
-// 
+//
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
@@ -1333,17 +1333,29 @@ public sealed class TaskHandler : IAsyncDisposable
       var report = healthCheckRecord_.LastCheck();
 
       logger_.LogDebug(e,
-                       "Cancellation detected {CancellationRequested}, agent health is {@HealthReport}, application is {ApplicationStatus}",
+                       "Cancellation detected {CancellationRequested}, agent health is {@HealthReport}, application is {ApplicationStatus}, shutdown is {IsShuttingDown}",
                        cancellationToken.IsCancellationRequested,
                        report.Entries.Select(kv => new KeyValuePair<string, HealthStatus>(kv.Key,
                                                                                           kv.Value.Status))
                              .ToDictionary(),
                        exceptionManager_.Failed
                          ? "Failed"
-                         : "Running");
+                         : "Running",
+                       exceptionManager_.IsShuttingDown);
 
 
-      if (report.Status is HealthStatus.Healthy && !exceptionManager_.Failed)
+      if (exceptionManager_.IsShuttingDown)
+      {
+        // The agent is shutting down (gracefully or due to a fatal error) — the task was interrupted
+        // mid-execution and must be requeued on another pod, regardless of the Failed state.
+        logger_.LogWarning(e,
+                           "Shutdown detected (Failed={Failed}), task cancelled here and re executed elsewhere",
+                           exceptionManager_.Failed);
+
+        await ReleaseAndPostponeTask()
+          .ConfigureAwait(false);
+      }
+      else if (report.Status is HealthStatus.Healthy && !exceptionManager_.Failed)
       {
         if (cancellationToken.IsCancellationRequested)
         {

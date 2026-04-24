@@ -183,12 +183,20 @@ public class WorkerStreamHandler : IWorkerStreamHandler
     }
     catch (RpcException e) when (e.StatusCode is StatusCode.Unavailable)
     {
-      // The gRPC retry policy (ServiceConfig) has already exhausted all per-call retries.
-      // The worker connection is lost — reset state and attempt a full reconnection
-      // before retrying the task once. If reconnection also fails, the exception propagates
-      // to TaskHandler which will resubmit the task to another pod.
+      // Do NOT retry the task here. When the connection is lost mid-execution, we cannot
+      // determine whether the worker received and started processing the request.
+      // Retrying would risk executing the same task twice (duplicate side-effects, double
+      // result writes) if the worker is still alive but the network dropped transiently.
+      //
+      // Instead, propagate the exception to TaskHandler so it safely requeues the task
+      // to another pod via the task state machine.
+      //
+      // However, we must still reconnect before throwing so that the next task picked up
+      // by this polling agent can be processed. Pollster.Init() is only called once at
+      // startup, so without this reconnect the worker client would remain null and all
+      // subsequent tasks would fail with "Worker client should be initialized".
       logger_.LogWarning(e,
-                         "Worker connection lost during task processing, attempting to reconnect");
+                         "Worker connection lost during task processing. Reconnecting for future tasks and propagating to TaskHandler for safe requeue of current task");
 
       isInitialized_ = false;
       workerClient_  = null;
@@ -201,17 +209,22 @@ public class WorkerStreamHandler : IWorkerStreamHandler
       var reconnectTimeout = TimeSpan.FromSeconds(optionsInitWorker_.WorkerCheckRetries * optionsInitWorker_.WorkerCheckDelay.TotalSeconds);
       using var reconnectCts = new CancellationTokenSource(reconnectTimeout);
 
-      await Init(reconnectCts.Token)
-        .ConfigureAwait(false);
+      try
+      {
+        await Init(reconnectCts.Token)
+          .ConfigureAwait(false);
+        logger_.LogInformation("Reconnected to worker after connection loss");
+      }
+      catch (Exception reconnectEx)
+      {
+        // Reconnection failed — log and continue to throw the original exception.
+        // The health check will eventually mark this pod as unhealthy and it will
+        // be restarted by the orchestrator.
+        logger_.LogError(reconnectEx,
+                         "Failed to reconnect to worker after connection loss. Pod will be marked unhealthy");
+      }
 
-      logger_.LogInformation("Reconnected to worker, retrying task processing");
-
-      return await SendProcessRequestAsync(taskData,
-                                           token,
-                                           dataFolder,
-                                           configuration,
-                                           cancellationToken)
-               .ConfigureAwait(false);
+      throw;
     }
   }
 
