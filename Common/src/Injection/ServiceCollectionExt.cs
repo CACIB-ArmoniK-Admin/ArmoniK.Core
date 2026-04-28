@@ -1,17 +1,17 @@
 // This file is part of the ArmoniK project
-// 
+//
 // Copyright (C) ANEO, 2021-2026. All rights reserved.
-// 
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
 // by the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// 
+//
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY, without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
-// 
+//
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
@@ -80,6 +80,16 @@ public static class ServiceCollectionExt
                                                                                                                   TimeSpan.FromSeconds(20)),
                                                  KeepAliveTimeOut = workerChannelOptions.GetTimeSpanOrDefault("KeepAliveTimeOut",
                                                                                                               TimeSpan.FromSeconds(130)),
+                                                 RetryMaxAttempts = workerChannelOptions.GetValue("RetryMaxAttempts",
+                                                                                                  5),
+                                                 RetryInitialBackoff = workerChannelOptions.GetTimeSpanOrDefault("RetryInitialBackoff",
+                                                                                                                  TimeSpan.FromSeconds(1)),
+                                                 RetryMaxBackoff = workerChannelOptions.GetTimeSpanOrDefault("RetryMaxBackoff",
+                                                                                                              TimeSpan.FromSeconds(10)),
+                                                 RetryBackoffMultiplier = workerChannelOptions.GetValue("RetryBackoffMultiplier",
+                                                                                                        2.0),
+                                                 ConnectionMaxRetries = workerChannelOptions.GetValue("ConnectionMaxRetries",
+                                                                                                      0),
                                                },
                                AgentChannel = new GrpcChannel
                                               {
@@ -91,11 +101,13 @@ public static class ServiceCollectionExt
                                                                                                                 TimeSpan.FromSeconds(20)),
                                                 KeepAliveTimeOut = agentChannelOptions.GetTimeSpanOrDefault("KeepAliveTimeOut",
                                                                                                             TimeSpan.FromSeconds(130)),
+                                                ConnectionMaxRetries = agentChannelOptions.GetValue("ConnectionMaxRetries",
+                                                                                                     0),
                                               },
                                MessageBatchSize = computePlanComponent.GetValue("MessageBatchSize",
-                                                                                1),
-                               AbortAfter = computePlanComponent.GetValue("AbortAfter",
-                                                                          TimeSpan.Zero),
+                                                                                                             1),
+                                                            AbortAfter = computePlanComponent.GetValue("AbortAfter",
+                                                                                                       TimeSpan.Zero),
                              };
 
     services.AddSingleton(parsedComputePlane)

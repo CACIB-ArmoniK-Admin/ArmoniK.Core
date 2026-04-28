@@ -1,17 +1,17 @@
 // This file is part of the ArmoniK project
-// 
+//
 // Copyright (C) ANEO, 2021-2026. All rights reserved.
-// 
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
 // by the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// 
+//
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY, without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
-// 
+//
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
@@ -571,5 +571,121 @@ public class ExceptionManagerTests
                 Is.True);
 
     lifetime_.NotifyStopped();
+  }
+
+  [Test]
+  [Timeout(1000)]
+  public void IsShuttingDownInitiallyFalse()
+  {
+    using var em = new ExceptionManager(lifetime_,
+                                        new OptionsWrapper<ConsoleLifetimeOptions>(new ConsoleLifetimeOptions()),
+                                        new HostingEnvironment(),
+                                        new OptionsWrapper<HostOptions>(new HostOptions()),
+                                        loggerFactory_.CreateLogger<ExceptionManager>(),
+                                        new ExceptionManager.Options(MaxError: 5));
+
+    Assert.That(em.IsShuttingDown,
+                Is.False);
+    Assert.That(em.Failed,
+                Is.False);
+  }
+
+  [Test]
+  [Timeout(1000)]
+  public void StopApplicationSetsIsShuttingDownButNotFailed()
+  {
+    using var em = new ExceptionManager(lifetime_,
+                                        new OptionsWrapper<ConsoleLifetimeOptions>(new ConsoleLifetimeOptions()),
+                                        new HostingEnvironment(),
+                                        new OptionsWrapper<HostOptions>(new HostOptions()),
+                                        loggerFactory_.CreateLogger<ExceptionManager>(),
+                                        new ExceptionManager.Options(MaxError: 5));
+
+    em.StopApplication(false);
+
+    Assert.That(em.IsShuttingDown,
+                Is.True);
+    Assert.That(em.Failed,
+                Is.False);
+  }
+
+  [Test]
+  [Timeout(1000)]
+  public void FatalErrorSetsBothFailedAndIsShuttingDown()
+  {
+    var logger = loggerFactory_.CreateLogger(nameof(FatalErrorSetsBothFailedAndIsShuttingDown));
+    using var em = new ExceptionManager(lifetime_,
+                                        new OptionsWrapper<ConsoleLifetimeOptions>(new ConsoleLifetimeOptions()),
+                                        new HostingEnvironment(),
+                                        new OptionsWrapper<HostOptions>(new HostOptions()),
+                                        loggerFactory_.CreateLogger<ExceptionManager>(),
+                                        new ExceptionManager.Options(MaxError: 5));
+
+    em.FatalError(logger,
+                  new ApplicationException("Fatal"),
+                  "Fatal error test");
+
+    // FatalError cancels earlyCts_, so both IsShuttingDown and EarlyCancellationToken reflect the same state
+    Assert.That(em.IsShuttingDown,                Is.True);
+    Assert.That(em.Failed,
+                Is.True);
+    Assert.That(em.EarlyCancellationToken.IsCancellationRequested,
+                Is.True);
+  }
+
+  [Test]
+  [Timeout(1000)]
+  public void StopApplicationSetsIsShuttingDownAndDoesNotSetFailed()
+  {
+    var logger = loggerFactory_.CreateLogger(nameof(StopApplicationSetsIsShuttingDownAndDoesNotSetFailed));
+    using var em = new ExceptionManager(lifetime_,
+                                        new OptionsWrapper<ConsoleLifetimeOptions>(new ConsoleLifetimeOptions()),
+                                        new HostingEnvironment(),
+                                        new OptionsWrapper<HostOptions>(new HostOptions()),
+                                        loggerFactory_.CreateLogger<ExceptionManager>(),
+                                        new ExceptionManager.Options(MaxError: 5));
+
+    em.StopApplication(false);
+
+    Assert.That(em.IsShuttingDown,
+                Is.True);
+    Assert.That(em.Failed,
+                Is.False);
+
+    em.RecordError(logger,
+                   new ApplicationException("Error after stop"),
+                   "Post-stop error");
+
+    Assert.That(em.Failed,
+                Is.False);
+  }
+
+  [Test]
+  [Timeout(1000)]
+  public void ErrorsAloneSetBothFailedAndIsShuttingDown()
+  {
+    var logger = loggerFactory_.CreateLogger(nameof(ErrorsAloneSetBothFailedAndIsShuttingDown));
+    using var em = new ExceptionManager(lifetime_,
+                                        new OptionsWrapper<ConsoleLifetimeOptions>(new ConsoleLifetimeOptions()),
+                                        new HostingEnvironment(),
+                                        new OptionsWrapper<HostOptions>(new HostOptions()),
+                                        loggerFactory_.CreateLogger<ExceptionManager>(),
+                                        new ExceptionManager.Options(MaxError: 2));
+
+    // Record enough errors to trigger failure
+    for (var i = 0; i < 3; i++)
+    {
+      em.RecordError(logger,
+                     new ApplicationException($"Error {i}"),
+                     "Error loop");
+    }
+
+    Assert.That(em.Failed,
+                Is.True);
+    // IsShuttingDown == EarlyCancellationToken.IsCancellationRequested
+    Assert.That(em.IsShuttingDown,
+                Is.True);
+    Assert.That(em.EarlyCancellationToken.IsCancellationRequested,
+                Is.True);
   }
 }

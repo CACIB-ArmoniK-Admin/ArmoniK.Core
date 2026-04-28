@@ -185,8 +185,9 @@ public class ExceptionManager : IDisposable, IHostApplicationLifetime, IHostLife
   /// <param name="external">Whether cancellation is external</param>
   public void StopApplication(bool external)
   {
+    // Use maxError_ + 2 so post-Exchange RecordError increments never hit the == maxError_ + 1 failure threshold.
     Interlocked.Exchange(ref nbError_,
-                         maxError_ + 1);
+                         maxError_ + 2);
 
     if (logger_ is not null)
     {
@@ -243,13 +244,9 @@ public class ExceptionManager : IDisposable, IHostApplicationLifetime, IHostLife
     if (nbError == maxError_ + 1)
     {
       logger_?.LogCritical("Stop Application after too many errors");
-      earlyCts_.Cancel();
-    }
-
-    if (nbError >= maxError_ + 1)
-    {
       Volatile.Write(ref failed_,
                      1);
+      earlyCts_.Cancel();
     }
   }
 
@@ -318,7 +315,7 @@ public class ExceptionManager : IDisposable, IHostApplicationLifetime, IHostLife
   {
     logger ??= logger_;
 
-    var nbError = nbError_;
+    var nbError = Volatile.Read(ref nbError_);
     int previousNbError;
     do
     {
@@ -395,7 +392,7 @@ public class ExceptionManager : IDisposable, IHostApplicationLifetime, IHostLife
   }
 
   /// <summary>
-  ///   Options for the ExceptionManger
+  ///   Options for the ExceptionManager
   /// </summary>
   /// <param name="GraceDelay">
   ///   Delay between the <see cref="ExceptionManager.EarlyCancellationToken" /> and the
