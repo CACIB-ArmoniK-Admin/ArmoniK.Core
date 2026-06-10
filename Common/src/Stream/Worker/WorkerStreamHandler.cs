@@ -1,17 +1,17 @@
 // This file is part of the ArmoniK project
-// 
+//
 // Copyright (C) ANEO, 2021-2026. All rights reserved.
-// 
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
 // by the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// 
+//
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY, without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
-// 
+//
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
@@ -45,8 +45,9 @@ public class WorkerStreamHandler : IWorkerStreamHandler
   private readonly GrpcChannelProvider                     channelProvider_;
   private readonly ILogger<WorkerStreamHandler>            logger_;
   private readonly InitWorker                              optionsInitWorker_;
-  private          bool                                    isInitialized_;
-  private          int                                     retryCheck_;
+  private readonly CheckWorker                             optionsCheckWorker_;
+  private volatile bool                                    isInitialized_;
+  private volatile bool                                    isInitializing_;
   private          Api.gRPC.V1.Worker.Worker.WorkerClient? workerClient_;
 
   /// <summary>
@@ -54,14 +55,17 @@ public class WorkerStreamHandler : IWorkerStreamHandler
   /// </summary>
   /// <param name="channelProvider">The gRPC channel provider.</param>
   /// <param name="optionsInitWorker">The initialization options for the worker.</param>
+  /// <param name="optionsCheckWorker">The health check retry options for the worker.</param>
   /// <param name="logger">The logger instance.</param>
   public WorkerStreamHandler(GrpcChannelProvider          channelProvider,
                              InitWorker                   optionsInitWorker,
+                             CheckWorker                  optionsCheckWorker,
                              ILogger<WorkerStreamHandler> logger)
   {
-    channelProvider_   = channelProvider;
-    optionsInitWorker_ = optionsInitWorker;
-    logger_            = logger;
+    channelProvider_    = channelProvider;
+    optionsInitWorker_  = optionsInitWorker;
+    optionsCheckWorker_ = optionsCheckWorker;
+    logger_             = logger;
   }
 
   /// <inheritdoc />
@@ -72,68 +76,98 @@ public class WorkerStreamHandler : IWorkerStreamHandler
       return;
     }
 
-    for (var retry = 1; retry < optionsInitWorker_.WorkerCheckRetries; ++retry)
+    isInitializing_ = true;
+    try
     {
-      try
+      for (var retry = 1; retry < optionsInitWorker_.WorkerCheckRetries; ++retry)
       {
-        var channel = channelProvider_.Get();
-        workerClient_ = new Api.gRPC.V1.Worker.Worker.WorkerClient(channel);
-
-        var check = await CheckWorker(cancellationToken)
-                      .ConfigureAwait(false);
-
-        if (!check)
+        try
         {
-          throw new ArmoniKException("Worker Health Check was not successful");
+          var channel = channelProvider_.Get();
+          workerClient_ = new Api.gRPC.V1.Worker.Worker.WorkerClient(channel);
+
+          var check = await CheckWorker(cancellationToken)
+                        .ConfigureAwait(false);
+
+          if (!check)
+          {
+            throw new ArmoniKException("Worker Health Check was not successful");
+          }
+
+          isInitialized_ = true;
+          return;
         }
+        catch (Exception ex)
+        {
+          logger_.LogError(ex,
+                           "Failed to create worker channel, retry in {seconds}",
+                           optionsInitWorker_.WorkerCheckDelay * (1 << (retry - 1)));
+          await Task.Delay(optionsInitWorker_.WorkerCheckDelay * (1 << (retry - 1)),
+                           cancellationToken)
+                    .ConfigureAwait(false);
+        }
+      }
 
-        isInitialized_ = true;
-        return;
-      }
-      catch (Exception ex)
-      {
-        logger_.LogError(ex,
-                         "Failed to create worker channel, retry in {seconds}",
-                         optionsInitWorker_.WorkerCheckDelay * retry);
-        await Task.Delay(optionsInitWorker_.WorkerCheckDelay * retry,
-                         cancellationToken)
-                  .ConfigureAwait(false);
-      }
+      var e = new ArmoniKException("Could not get grpc channel");
+      logger_.LogError(e,
+                       "Could not get grpc channel");
+      throw e;
     }
-
-    var e = new ArmoniKException("Could not get grpc channel");
-    logger_.LogError(e,
-                     "Could not get grpc channel");
-    throw e;
+    finally
+    {
+      isInitializing_ = false;
+    }
   }
 
   /// <inheritdoc />
   public async Task<HealthCheckResult> Check(HealthCheckTag tag)
   {
-    try
+    if (!isInitialized_)
     {
-      if (!isInitialized_)
+      return isInitializing_
+               ? HealthCheckResult.Degraded("Worker is still initializing")
+               : HealthCheckResult.Unhealthy("Worker not yet initialized");
+    }
+
+    Exception? lastException = null;
+
+    var retry = 1;
+    while (retry < optionsCheckWorker_.WorkerCheckRetries)
+    {
+      try
       {
-        return HealthCheckResult.Unhealthy("Worker not yet initialized");
+        var check = await CheckWorker(CancellationToken.None)
+                      .ConfigureAwait(false);
+
+        if (check)
+        {
+          return HealthCheckResult.Healthy();
+        }
+
+        logger_.LogWarning("Worker health check was not successful, retry {retry}/{retries}",
+                           retry,
+                           optionsCheckWorker_.WorkerCheckRetries);
+      }
+      catch (Exception ex)
+      {
+        lastException = ex;
+        logger_.LogWarning(ex,
+                           "Worker health check failed with exception, retry {retry}/{retries}",
+                           retry,
+                           optionsCheckWorker_.WorkerCheckRetries);
       }
 
-      retryCheck_++;
-      var check = await CheckWorker(CancellationToken.None)
-                    .ConfigureAwait(false);
+      await Task.Delay(optionsCheckWorker_.WorkerCheckDelay * (1 << (retry - 1)),
+                       CancellationToken.None)
+                .ConfigureAwait(false);
 
-      if (!check)
-      {
-        return HealthCheckResult.Unhealthy("Health check on worker was not successful (too many retries)");
-      }
+      retry++;
+    }
 
-      retryCheck_ = 0;
-      return HealthCheckResult.Healthy();
-    }
-    catch (Exception ex)
-    {
-      return HealthCheckResult.Unhealthy("Health check on worker was not successful with exception",
-                                         ex);
-    }
+    return lastException is not null
+             ? HealthCheckResult.Unhealthy("Health check on worker was not successful with exception",
+                                           lastException)
+             : HealthCheckResult.Unhealthy("Health check on worker was not successful (too many retries)");
   }
 
   /// <inheritdoc />
