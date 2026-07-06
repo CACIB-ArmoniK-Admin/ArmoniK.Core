@@ -1,17 +1,17 @@
 // This file is part of the ArmoniK project
-// 
+//
 // Copyright (C) ANEO, 2021-2025. All rights reserved.
-// 
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published
 // by the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
-// 
+//
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY, without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
-// 
+//
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
@@ -171,6 +171,14 @@ public static class Program
       }
 
       builder.Services.AddHealthChecks();
+
+      // The internal HealthCheckPublisher (HealthCheckPublisherHostedService) evaluates all registered
+      // health checks HealthCheckPublisherDelay after startup by default (framework default: 5 seconds),
+      // then every 30s. On a fresh start, slow-initializing dependencies (object storage, queue,
+      // database...) can still be starting up at that point, causing an early Liveness failure that
+      // permanently stops task processing. Pollster:HealthCheckPublisherDelay (appsettings.json /
+      // Pollster__HealthCheckPublisherDelay env var) controls how long to wait before that first check.
+      builder.Services.Configure<HealthCheckPublisherOptions>(options => options.Delay = pollsterOptions.HealthCheckPublisherDelay);
 
       var app = builder.Build();
 
