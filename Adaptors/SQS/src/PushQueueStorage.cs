@@ -27,6 +27,7 @@ using Amazon.SQS.Model;
 using ArmoniK.Core.Adapters.SQS.Extensions;
 using ArmoniK.Core.Base;
 using ArmoniK.Core.Base.DataStructures;
+using ArmoniK.Core.Base.Exceptions;
 using ArmoniK.Utils;
 
 using Microsoft.Extensions.Caching.Memory;
@@ -67,7 +68,7 @@ internal class PushQueueStorage : IPushQueueStorage
                   .ToAsyncEnumerable()
                   .SelectMany(group => group.Chunk(10)
                                             .ToAsyncEnumerable()
-                                            .SelectAwait(async chunk =>
+                                            .ParallelSelect(async chunk =>
                                                          {
                                                            var queueName = client_.GetQueueName(options_,
                                                                                                 group.Key,

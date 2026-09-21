@@ -32,6 +32,7 @@ using Amazon.S3.Util;
 using ArmoniK.Core.Base;
 using ArmoniK.Core.Base.DataStructures;
 using ArmoniK.Core.Base.Exceptions;
+using ArmoniK.Core.Utils;
 using ArmoniK.Utils;
 
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -172,7 +173,7 @@ public class ObjectStorage : IObjectStorage
                                                                async uploadPartRequest => await s3Client_.UploadPartAsync(uploadPartRequest,
                                                                                                                           cancellationToken)
                                                                                                          .ConfigureAwait(false))
-                                               .ToListAsync(cancellationToken)
+                                               .ToListAsync()
                                                .ConfigureAwait(false);
 
       var compRequest = new CompleteMultipartUploadRequest
@@ -219,7 +220,7 @@ public class ObjectStorage : IObjectStorage
                                                    .ConfigureAwait(false)))
                 .ToDictionaryAsync(tuple => tuple.id,
                                    tuple => tuple.Item2,
-                                   cancellationToken)
+                                   cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
   private async Task<GetObjectResponse> GetObjectStream(string            key,

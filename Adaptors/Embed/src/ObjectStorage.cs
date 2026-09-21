@@ -76,7 +76,7 @@ public class ObjectStorage : IObjectStorage
   /// <inheritdoc />
   public IAsyncEnumerable<byte[]> GetValuesAsync(byte[]            id,
                                                  CancellationToken cancellationToken = default)
-    => AsyncEnumerable.Repeat(id,
+    => System.Linq.AsyncEnumerable.Repeat(id,
                               1);
 
   /// <inheritdoc />
